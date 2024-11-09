@@ -19,7 +19,7 @@ def create_model_and_diffusion(args, data):
 def get_model_args(args, data):
 
     # default args
-    clip_version = 'ViT-B/32'
+    # clip_version = 'ViT-B/32'
     action_emb = 'tensor'
     cond_mode = get_cond_mode(args)
     if hasattr(data.dataset, 'num_actions'):
@@ -46,7 +46,8 @@ def get_model_args(args, data):
             'latent_dim': args.latent_dim, 'ff_size': 1024, 'num_layers': args.layers, 'num_heads': 4,
             'dropout': 0.1, 'activation': "gelu", 'data_rep': data_rep, 'cond_mode': cond_mode,
             'cond_mask_prob': args.cond_mask_prob, 'action_emb': action_emb, 'arch': args.arch,
-            'emb_trans_dec': args.emb_trans_dec, 'clip_version': clip_version, 'dataset': args.dataset}
+            'emb_trans_dec': args.emb_trans_dec, 'clip_version': args.clip_version, 
+            'clip_model_path': args.clip_model_path, 'dataset': args.dataset}
 
 
 def create_gaussian_diffusion(args):

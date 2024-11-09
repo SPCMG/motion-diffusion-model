@@ -129,3 +129,10 @@ dmypy.json
 .pyre/
 
 save/
+body_models/
+checkpoints/
+kit/
+t2m/
+dataset/HumanML3D/
+job.sh
+glove/
