@@ -217,11 +217,13 @@ class TrainLoop:
             assert self.microbatch == self.batch_size
             micro = batch
             micro_cond = cond
+            # TODO
+            # print("cond['y'][text'] in run_loop:", len(cond['y']['text']))
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
-            compute_losses = functools.partial(
-                self.diffusion.training_losses,
+            compute_losses = functools.partial(   
+                self.diffusion.training_losses,  # Here the forward(self, x, timesteps, y=None) will be implicitly called
                 self.ddp_model,
                 micro,  # [bs, ch, image_size, image_size]
                 t,  # [bs](int) sampled timesteps

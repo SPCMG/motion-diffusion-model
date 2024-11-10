@@ -94,9 +94,9 @@ def add_model_options(parser):
                        help="Model is trained unconditionally. That is, it is constrained by neither text nor action. "
                             "Currently tested on HumanAct12 only.")
     # Add these two lines for CLIP options
-    group.add_argument("--clip_version", default='ViT-L/14', type=str,
-                       help="CLIP model version to use (e.g., 'ViT-L/14').")
-    group.add_argument("--clip_model_path", default="./checkpoints/laion400m_laclip_vitl14.pt", type=str,
+    group.add_argument("--clip_version", default='ViT-B/32', type=str,
+                       help="CLIP model version to use (e.g., 'ViT-B/32').")
+    group.add_argument("--clip_model_path", default="./checkpoints/laion400m_laclip.pt", type=str,
                        help="Path to custom CLIP model weights (e.g., LaCLIP checkpoint).")
 
 

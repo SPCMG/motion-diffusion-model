@@ -165,6 +165,8 @@ class MDM(nn.Module):
                 enc_text = y['text_embed']
             else:
                 enc_text = self.encode_text(y['text'])
+            # TODO
+            # print("enc_text shape:", enc_text.shape)
             emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask))
         if 'action' in self.cond_mode:
             action_emb = self.embed_action(y['action'])
