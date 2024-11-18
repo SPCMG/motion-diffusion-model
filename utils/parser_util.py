@@ -142,10 +142,12 @@ def add_training_options(parser):
                        help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
     group.add_argument("--resume_checkpoint", default="", type=str,
                        help="If not empty, will start from the specified checkpoint (path to model###.pt file).")
+    group.add_argument("--contrastive_loss_weight", default=1.0, type=float,
+                       help="Weight for the contrastive loss during training.")    
     group.add_argument("--temperature", default=0.7, type=float,
                        help="Temperature parameter for the InfoNCE loss.")
-    group.add_argument("--contrastive_loss_weight", default=1.0, type=float,
-                       help="Weight for the contrastive loss during training.")
+    group.add_argument("--threshold_selfsim", default=0.8, type=float,
+                       help="Threshold for self-similarity filtering in contrastive learning.")
 
 
 def add_sampling_options(parser):
