@@ -404,30 +404,45 @@ class Text2MotionDatasetV2(data.Dataset):
         "Z Normalization"
         motion = (motion - self.mean) / self.std
 
+        if m_length < self.max_motion_length:
+            motion = np.concatenate([motion,
+                                    np.zeros((self.max_motion_length - m_length, motion.shape[1]))
+                                    ], axis=0)
+
         # If using contrastive loss, get negative samples
+        # if self.use_contrastive_loss:
+        #     negative_texts = self.negative_data_dict.get(self.name_list[idx], [])
+        #     if negative_texts:
+        #         negative_text = random.choice(negative_texts)
+        #         # Process negative text
+        #         neg_tokens = self.process_text(negative_text)
+        #         neg_word_embeddings, neg_pos_one_hots, neg_sent_len = self.process_tokens(neg_tokens)
+        #     else:
+        #         # If no negative samples, use zeros or handle accordingly
+        #         neg_word_embeddings = np.zeros_like(word_embeddings)
+        #         neg_pos_one_hots = np.zeros_like(pos_one_hots)
+        #         neg_sent_len = sent_len
+        # else:
+        #     neg_word_embeddings = None
+        #     neg_pos_one_hots = None
+        #     neg_sent_len = None
+
+        # Return negative embeddings if use_contrastive_loss is True
+        # if self.use_contrastive_loss:
+        #     return (word_embeddings, pos_one_hots, caption, sent_len, motion, m_length,
+        #             neg_word_embeddings, neg_pos_one_hots, neg_sent_len)
+        # else:
+        #     return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length
+
         if self.use_contrastive_loss:
             negative_texts = self.negative_data_dict.get(self.name_list[idx], [])
             if negative_texts:
                 negative_text = random.choice(negative_texts)
-                # Process negative text
-                neg_tokens = self.process_text(negative_text)
-                neg_word_embeddings, neg_pos_one_hots, neg_sent_len = self.process_tokens(neg_tokens)
             else:
-                # If no negative samples, use zeros or handle accordingly
-                neg_word_embeddings = np.zeros_like(word_embeddings)
-                neg_pos_one_hots = np.zeros_like(pos_one_hots)
-                neg_sent_len = sent_len
-        else:
-            neg_word_embeddings = None
-            neg_pos_one_hots = None
-            neg_sent_len = None
-
-        # Return negative embeddings if use_contrastive_loss is True
-        if self.use_contrastive_loss:
-            return (word_embeddings, pos_one_hots, caption, sent_len, motion, m_length,
-                    neg_word_embeddings, neg_pos_one_hots, neg_sent_len)
-        else:
-            return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length
+                negative_text = ''
+            return (word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, '_'.join(tokens), negative_text)  # negative_text == negative caption
+        else :
+            return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, '_'.join(tokens)
 
         # if m_length < self.max_motion_length:
         #     motion = np.concatenate([motion,

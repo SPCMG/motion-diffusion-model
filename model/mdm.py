@@ -6,7 +6,6 @@ import clip
 from model.rotation2xyz import Rotation2xyz
 
 
-
 class MDM(nn.Module):
     def __init__(self, modeltype, njoints, nfeats, num_actions, translation, pose_rep, glob, glob_rot,
                  latent_dim=256, ff_size=1024, num_layers=8, num_heads=4, dropout=0.1,
@@ -57,6 +56,7 @@ class MDM(nn.Module):
         if self.use_contrastive_loss:
             # Initialize layers for contrastive loss
             self.motion_embed_layer = nn.Linear(self.latent_dim, self.latent_dim)
+            self.motion_embeddings = None # Placeholder for motion embeddings used for contrastive loss
 
         if self.arch == 'trans_enc':
             print("TRANS_ENC init")
@@ -208,15 +208,16 @@ class MDM(nn.Module):
             xseq = self.sequence_pos_encoder(xseq)  # [seqlen, bs, d]
             output, _ = self.gru(xseq)
 
+        # Compute motion embeddings before `self.output_process`
+        if self.use_contrastive_loss:
+            # Compute motion embeddings by averaging over the sequence length
+            motion_embeddings = output.mean(dim=0)  # [bs, latent_dim]
+            motion_embeddings = self.motion_embed_layer(motion_embeddings)  # [bs, latent_dim]
+            self.motion_embeddings = motion_embeddings
+
         output = self.output_process(output)  # [bs, njoints, nfeats, nframes]
         
-        if self.use_contrastive_loss:
-            # Compute motion embeddings
-            motion_embeddings = output.mean(dim=3).mean(dim=2)  # [bs, latent_dim]
-            motion_embeddings = self.motion_embed_layer(motion_embeddings)  # [bs, latent_dim]
-            return output, motion_embeddings
-        else:
-            return output
+        return output
 
 
     def _apply(self, fn):

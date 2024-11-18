@@ -43,6 +43,10 @@ def collate(batch):
         textbatch = [b['tokens'] for b in notnone_batches]
         cond['y'].update({'tokens': textbatch})
 
+    if 'neg_text' in notnone_batches[0]:
+        neg_textbatch = [b['neg_text'] for b in notnone_batches]
+        cond['y'].update({'neg_text': neg_textbatch})
+
     if 'action' in notnone_batches[0]:
         actionbatch = [b['action'] for b in notnone_batches]
         cond['y'].update({'action': torch.as_tensor(actionbatch).unsqueeze(1)})
@@ -55,14 +59,30 @@ def collate(batch):
     return motion, cond
 
 # an adapter to our collate func
+# def t2m_collate(batch):
+#     # batch.sort(key=lambda x: x[3], reverse=True)
+#     adapted_batch = [{
+#         'inp': torch.tensor(b[4].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
+#         'text': b[2], #b[0]['caption']
+#         'tokens': b[6],
+#         'lengths': b[5],
+#     } for b in batch]
+#     return collate(adapted_batch)
+
 def t2m_collate(batch):
-    # batch.sort(key=lambda x: x[3], reverse=True)
-    adapted_batch = [{
-        'inp': torch.tensor(b[4].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
-        'text': b[2], #b[0]['caption']
-        'tokens': b[6],
-        'lengths': b[5],
-    } for b in batch]
+    adapted_batch = []
+    for b in batch:
+        data_dict = {
+            'inp': torch.tensor(b[4].T).float().unsqueeze(1),  # [seqlen, J] -> [J, 1, seqlen]
+            'text': b[2],  # caption
+            'tokens': b[6],
+            'lengths': b[5],
+        }
+        if len(b) > 7:
+            # 'negative_text' is present
+            data_dict['neg_text'] = b[7]
+        adapted_batch.append(data_dict)
     return collate(adapted_batch)
+
 
 
