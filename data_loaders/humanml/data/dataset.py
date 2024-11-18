@@ -205,13 +205,15 @@ class Text2MotionDataset(data.Dataset):
 
 '''For use of training text motion matching model, and evaluations'''
 class Text2MotionDatasetV2(data.Dataset):
-    def __init__(self, opt, mean, std, split_file, w_vectorizer):
+    def __init__(self, opt, mean, std, split_file, w_vectorizer, use_contrastive_loss):
         self.opt = opt
         self.w_vectorizer = w_vectorizer
+        self.use_contrastive_loss = use_contrastive_loss
         self.max_length = 20
         self.pointer = 0
         self.max_motion_length = opt.max_motion_length
         min_motion_len = 40 if self.opt.dataset_name =='t2m' else 24
+        self.nlp = spacy.load('en_core_web_sm')
 
         data_dict = {}
         id_list = []
@@ -280,6 +282,8 @@ class Text2MotionDatasetV2(data.Dataset):
         self.data_dict = data_dict
         self.name_list = name_list
         self.reset_max_len(self.max_length)
+        if self.use_contrastive_loss:
+            self.load_negative_samples()
 
     def reset_max_len(self, length):
         assert length <= self.max_motion_length
@@ -287,8 +291,73 @@ class Text2MotionDatasetV2(data.Dataset):
         print("Pointer Pointing at %d"%self.pointer)
         self.max_length = length
 
+    # TODO: Check if the same with the paper: https://github.com/kentfuji/ChronAccRet
+    def load_negative_samples(self):
+        self.negative_data_dict = {}
+        for name in self.name_list:
+            negative_texts = []
+            base_name = name.split('_')[-1] if '_' in name else name
+            text_events_folder = self.opt.text_event_dir
+            num_lines = len(self.data_dict[name]['text'])
+            for idx in range(num_lines):
+                event_file = os.path.join(text_events_folder, f"{base_name}_{idx}.txt")
+                if os.path.exists(event_file):
+                    with open(event_file, 'r') as f:
+                        data = json.load(f)
+                        events = data['events']
+                        # Create negative samples by shuffling events
+                        if len(events) > 1:
+                            shuffled_events = events.copy()
+                            # Keep shuffling until the order is different
+                            while shuffled_events == events:  
+                                random.shuffle(shuffled_events)
+                            negative_text = ' '.join(shuffled_events)
+                            negative_texts.append(negative_text)
+            if negative_texts:
+                self.negative_data_dict[name] = negative_texts
+
     def inv_transform(self, data):
         return data * self.std + self.mean
+    
+    # TODO
+    def process_text(self, sentence):
+        sentence = sentence.replace('-', '')
+        doc = self.nlp(sentence)
+        word_list = []
+        pos_list = []
+        for token in doc:
+            word = token.text
+            if not word.isalpha():
+                continue
+            if (token.pos_ == 'NOUN' or token.pos_ == 'VERB') and (word.lower() != 'left'):
+                word_list.append(token.lemma_)
+            else:
+                word_list.append(word)
+            pos_list.append(token.pos_)
+        tokens = ['%s/%s' % (word_list[i], pos_list[i]) for i in range(len(word_list))]
+        return tokens
+
+    # TODO
+    def process_tokens(self, tokens):
+        if len(tokens) < self.opt.max_text_len:
+            tokens = ['sos/OTHER'] + tokens + ['eos/OTHER']
+            sent_len = len(tokens)
+            tokens = tokens + ['unk/OTHER'] * (self.opt.max_text_len + 2 - sent_len)
+        else:
+            tokens = tokens[:self.opt.max_text_len]
+            tokens = ['sos/OTHER'] + tokens + ['eos/OTHER']
+            sent_len = len(tokens)
+
+        pos_one_hots = []
+        word_embeddings = []
+        for token in tokens:
+            word_emb, pos_oh = self.w_vectorizer[token]
+            pos_one_hots.append(pos_oh[None, :])
+            word_embeddings.append(word_emb[None, :])
+
+        pos_one_hots = np.concatenate(pos_one_hots, axis=0)
+        word_embeddings = np.concatenate(word_embeddings, axis=0)
+        return word_embeddings, pos_one_hots, sent_len
 
     def __len__(self):
         return len(self.data_dict) - self.pointer
@@ -336,13 +405,38 @@ class Text2MotionDatasetV2(data.Dataset):
         "Z Normalization"
         motion = (motion - self.mean) / self.std
 
-        if m_length < self.max_motion_length:
-            motion = np.concatenate([motion,
-                                     np.zeros((self.max_motion_length - m_length, motion.shape[1]))
-                                     ], axis=0)
-        # print(word_embeddings.shape, motion.shape)
-        # print(tokens)
-        return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, '_'.join(tokens)
+        # If using contrastive loss, get negative samples
+        if self.use_contrastive_loss:
+            negative_texts = self.negative_data_dict.get(self.name_list[idx], [])
+            if negative_texts:
+                negative_text = random.choice(negative_texts)
+                # Process negative text
+                neg_tokens = self.process_text(negative_text)
+                neg_word_embeddings, neg_pos_one_hots, neg_sent_len = self.process_tokens(neg_tokens)
+            else:
+                # If no negative samples, use zeros or handle accordingly
+                neg_word_embeddings = np.zeros_like(word_embeddings)
+                neg_pos_one_hots = np.zeros_like(pos_one_hots)
+                neg_sent_len = sent_len
+        else:
+            neg_word_embeddings = None
+            neg_pos_one_hots = None
+            neg_sent_len = None
+
+        # Return negative embeddings if use_contrastive_loss is True
+        if self.use_contrastive_loss:
+            return (word_embeddings, pos_one_hots, caption, sent_len, motion, m_length,
+                    neg_word_embeddings, neg_pos_one_hots, neg_sent_len)
+        else:
+            return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length
+
+        # if m_length < self.max_motion_length:
+        #     motion = np.concatenate([motion,
+        #                              np.zeros((self.max_motion_length - m_length, motion.shape[1]))
+        #                              ], axis=0)
+        # # print(word_embeddings.shape, motion.shape)
+        # # print(tokens)
+        # return word_embeddings, pos_one_hots, caption, sent_len, motion, m_length, '_'.join(tokens)
 
 
 '''For use of training baseline'''
@@ -719,8 +813,9 @@ class TextOnlyDataset(data.Dataset):
 
 # A wrapper class for t2m original dataset for MDM purposes
 class HumanML3D(data.Dataset):
-    def __init__(self, mode, datapath='./dataset/humanml_opt.txt', split="train", **kwargs):
+    def __init__(self, mode, datapath='./dataset/humanml_opt.txt', split="train", use_contrastive_loss=True, **kwargs):
         self.mode = mode
+        self.use_contrastive_loss = use_contrastive_loss
         
         self.dataset_name = 't2m'
         self.dataname = 't2m'
@@ -761,7 +856,7 @@ class HumanML3D(data.Dataset):
             self.t2m_dataset = TextOnlyDataset(self.opt, self.mean, self.std, self.split_file)
         else:
             self.w_vectorizer = WordVectorizer(pjoin(abs_base_path, 'glove'), 'our_vab')
-            self.t2m_dataset = Text2MotionDatasetV2(self.opt, self.mean, self.std, self.split_file, self.w_vectorizer)
+            self.t2m_dataset = Text2MotionDatasetV2(self.opt, self.mean, self.std, self.split_file, self.w_vectorizer, self.use_contrastive_loss)
             self.num_actions = 1 # dummy placeholder
 
         assert len(self.t2m_dataset) > 1, 'You loaded an empty dataset, ' \
@@ -779,3 +874,53 @@ class HumanML3D(data.Dataset):
 class KIT(HumanML3D):
     def __init__(self, mode, datapath='./dataset/kit_opt.txt', split="train", **kwargs):
         super(KIT, self).__init__(mode, datapath, split, **kwargs)
+
+
+if __name__ == "__main__":
+    import json
+    from torch.utils.data import DataLoader, Subset
+    from data_loaders.humanml.utils.get_opt import get_opt
+
+    # Load the options from humanml_opt.txt
+    opt_file = "./dataset/humanml_opt.txt"  # Update the path if needed
+    opt = get_opt(opt_file, device=None)  # Set device=None if not using a specific GPU
+
+    # Load mean and std
+    mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
+    std = np.load(pjoin(opt.data_root, 'Std.npy'))
+
+    # Initialize WordVectorizer
+    from data_loaders.humanml.utils.word_vectorizer import WordVectorizer
+    abs_base_path = f'.'
+    w_vectorizer = WordVectorizer(pjoin(abs_base_path, 'glove'), 'our_vab')
+
+    # Initialize the dataset
+    full_dataset = Text2MotionDatasetV2(
+        opt=opt,
+        mean=mean,
+        std=std,
+        split_file=pjoin(opt.data_root, 'test.txt'),
+        w_vectorizer=w_vectorizer,
+        use_contrastive_loss=True  
+    )
+
+    # Use only the first two samples
+    dataset = Subset(full_dataset, [0, 1])
+
+    print(f"Using a subset of the dataset with {len(dataset)} samples.")
+
+    # Create DataLoader
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=collate_fn)
+
+    # Iterate through the DataLoader
+    for batch_idx, batch in enumerate(dataloader):
+        (word_embeddings, pos_one_hots, captions, sent_lens, motions, m_lengths,
+         neg_word_embeddings, neg_pos_one_hots, neg_sent_lens) = batch
+        print(f"Batch {batch_idx + 1}:")
+        print(f"Word Embeddings Shape: {word_embeddings.shape}")
+        print(f"Motion Shape: {motions.shape}")
+        print(f"Captions: {captions}")
+        print(f"Lengths: {m_lengths}")
+        print(f"Negative Word Embeddings Shape: {neg_word_embeddings.shape if neg_word_embeddings is not None else 'None'}")
+        print(f"Negative Positional One-Hots Shape: {neg_pos_one_hots.shape if neg_pos_one_hots is not None else 'None'}")
+        print(f"Negative Sentence Lengths: {neg_sent_lens}")
