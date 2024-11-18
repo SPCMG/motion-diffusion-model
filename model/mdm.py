@@ -11,7 +11,8 @@ class MDM(nn.Module):
     def __init__(self, modeltype, njoints, nfeats, num_actions, translation, pose_rep, glob, glob_rot,
                  latent_dim=256, ff_size=1024, num_layers=8, num_heads=4, dropout=0.1,
                  ablation=None, activation="gelu", legacy=False, data_rep='rot6d', dataset='amass', clip_dim=512,
-                 arch='trans_enc', emb_trans_dec=False, clip_version=None, clip_model_path=None, **kargs):
+                 arch='trans_enc', emb_trans_dec=False, clip_version=None, clip_model_path=None, 
+                 use_contrastive_loss=True, **kargs):
         super().__init__()
 
         self.legacy = legacy
@@ -51,6 +52,11 @@ class MDM(nn.Module):
 
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
         self.emb_trans_dec = emb_trans_dec
+
+        self.use_contrastive_loss = use_contrastive_loss
+        if self.use_contrastive_loss:
+            # Initialize layers for contrastive loss
+            self.motion_embed_layer = nn.Linear(self.latent_dim, self.latent_dim)
 
         if self.arch == 'trans_enc':
             print("TRANS_ENC init")
@@ -203,7 +209,14 @@ class MDM(nn.Module):
             output, _ = self.gru(xseq)
 
         output = self.output_process(output)  # [bs, njoints, nfeats, nframes]
-        return output
+        
+        if self.use_contrastive_loss:
+            # Compute motion embeddings
+            motion_embeddings = output.mean(dim=3).mean(dim=2)  # [bs, latent_dim]
+            motion_embeddings = self.motion_embed_layer(motion_embeddings)  # [bs, latent_dim]
+            return output, motion_embeddings
+        else:
+            return output
 
 
     def _apply(self, fn):

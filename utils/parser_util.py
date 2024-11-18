@@ -98,6 +98,8 @@ def add_model_options(parser):
                        help="CLIP model version to use (e.g., 'ViT-B/32').")
     group.add_argument("--clip_model_path", default="./checkpoints/laion400m_laclip.pt", type=str,
                        help="Path to custom CLIP model weights (e.g., LaCLIP checkpoint).")
+    group.add_argument("--no_contrastive_loss", action="store_false", dest="use_contrastive_loss",
+                       help="Disable contrastive loss (enabled by default).")
 
 
 def add_data_options(parser):
@@ -140,6 +142,10 @@ def add_training_options(parser):
                        help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
     group.add_argument("--resume_checkpoint", default="", type=str,
                        help="If not empty, will start from the specified checkpoint (path to model###.pt file).")
+    group.add_argument("--temperature", default=0.7, type=float,
+                       help="Temperature parameter for the InfoNCE loss.")
+    group.add_argument("--contrastive_loss_weight", default=1.0, type=float,
+                       help="Weight for the contrastive loss during training.")
 
 
 def add_sampling_options(parser):
@@ -196,7 +202,7 @@ def add_evaluation_options(parser):
     group = parser.add_argument_group('eval')
     group.add_argument("--model_path", required=True, type=str,
                        help="Path to model####.pt file to be sampled.")
-    group.add_argument("--eval_mode", default='wo_mm', choices=['wo_mm', 'mm_short', 'debug', 'full'], type=str,
+    group.add_argument("--eval_mode", default='mm_short', choices=['wo_mm', 'mm_short', 'debug', 'full'], type=str,
                        help="wo_mm (t2m only) - 20 repetitions without multi-modality metric; "
                             "mm_short (t2m only) - 5 repetitions with multi-modality metric; "
                             "debug - short run, less accurate results."

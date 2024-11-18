@@ -47,7 +47,7 @@ def get_model_args(args, data):
             'dropout': 0.1, 'activation': "gelu", 'data_rep': data_rep, 'cond_mode': cond_mode,
             'cond_mask_prob': args.cond_mask_prob, 'action_emb': action_emb, 'arch': args.arch,
             'emb_trans_dec': args.emb_trans_dec, 'clip_version': args.clip_version, 
-            'clip_model_path': args.clip_model_path, 'dataset': args.dataset}
+            'clip_model_path': args.clip_model_path, 'use_contrastive_loss': args.use_contrastive_loss, 'dataset': args.dataset}
 
 
 def create_gaussian_diffusion(args):

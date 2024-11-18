@@ -100,6 +100,11 @@ class TrainLoop:
         self.use_ddp = False
         self.ddp_model = self.model
 
+        self.use_contrastive_loss = args.use_contrastive_loss
+        if self.use_contrastive_loss:
+            self.contrastive_loss_weight = args.contrastive_loss_weight
+            self.temperature = args.temperature
+
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
 
@@ -243,10 +248,62 @@ class TrainLoop:
                 )
 
             loss = (losses["loss"] * weights).mean()
+
+            if self.use_contrastive_loss:
+                # Get motion embeddings from the model output
+                motion_output = self.ddp_model(micro, t, y=micro_cond)
+                if isinstance(motion_output, tuple):
+                    _, motion_embeddings = motion_output
+                else:
+                    motion_embeddings = None
+
+                # TODO: Compute contrastive loss
+                if motion_embeddings is not None:
+                    contrastive_loss = self.compute_contrastive_loss(motion_embeddings, cond)
+                    loss += self.contrastive_loss_weight * contrastive_loss
+
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
             self.mp_trainer.backward(loss)
+
+    def compute_contrastive_loss(self, motion_embeddings, cond):
+        # Encode positive and negative texts
+        pos_text_embeddings = self.model.embed_text(
+            self.model.mask_cond(self.model.encode_text(cond['y']['text']))
+        )
+        neg_text_embeddings = self.model.embed_text(
+            self.model.mask_cond(self.model.encode_text(cond['y']['negative_text']))
+        )
+
+        # Combine embeddings
+        text_embeddings = torch.cat([pos_text_embeddings.unsqueeze(1), neg_text_embeddings.unsqueeze(1)], dim=1)  # [bs, 2, latent_dim]
+
+        # Compute similarities
+        logits = torch.bmm(text_embeddings, motion_embeddings.unsqueeze(2)).squeeze(2)  # [bs, 2]
+        logits /= self.temperature
+
+        # Filtering based on self-similarity
+        # The threshold_selfsim parameter is used to filter out negative samples that are too similar to the positive samples 
+        # in the contrastive learning setup.
+        if self.threshold_selfsim:
+            sent_emb = torch.cat([pos_text_embeddings, neg_text_embeddings], dim=0)  # [2*bs, latent_dim]
+            selfsim = torch.mm(sent_emb, sent_emb.t())  # [2*bs, 2*bs]
+            real_threshold_selfsim = 2 * self.threshold_selfsim - 1
+            # Exclude diagonal
+            selfsim = selfsim - torch.diag(torch.diag(selfsim))
+            idx = torch.where(selfsim > real_threshold_selfsim)
+            # Adjust indices for logits
+            logits_flat = logits.view(-1)
+            logits_flat[idx] = -float('inf')
+            logits = logits_flat.view_as(logits)
+
+        # Labels: positive text at index 0
+        labels = torch.zeros(logits.size(0), dtype=torch.long).to(logits.device)
+
+        # Compute InfoNCE loss
+        contrastive_loss = torch.nn.functional.cross_entropy(logits, labels)
+        return contrastive_loss
 
     def _anneal_lr(self):
         if not self.lr_anneal_steps:
