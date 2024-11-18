@@ -306,13 +306,12 @@ class Text2MotionDatasetV2(data.Dataset):
                         data = json.load(f)
                         events = data['events']
                         # Create negative samples by shuffling events
-                        if len(events) > 1:
-                            shuffled_events = events.copy()
-                            # Keep shuffling until the order is different
-                            while shuffled_events == events:  
-                                random.shuffle(shuffled_events)
-                            negative_text = ' '.join(shuffled_events)
-                            negative_texts.append(negative_text)
+                        # The shuffled events could be the same as the original events
+                        # threshold_selfsim when calculate the contrastive loss will solve this issue
+                        shuffled_events = events.copy() 
+                        random.shuffle(shuffled_events)
+                        negative_text = ' '.join(shuffled_events)
+                        negative_texts.append(negative_text)
             if negative_texts:
                 self.negative_data_dict[name] = negative_texts
 
